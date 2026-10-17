@@ -409,6 +409,8 @@ function toggleKeepAwake(on) {
   return { keepAwake: !!on, active, blocker: powerBlockerId };
 }
 
+let trayMenu = null;
+
 function refreshTray() {
   if (!tray) return;
   const screenOk = screenPermission() === 'granted';
@@ -467,7 +469,8 @@ function refreshTray() {
     { label: '使用说明 / 设置…', click: () => showHelp('manual') },
     { label: '退出 Snap', click: () => { app.exit(0); } },
   ]);
-  tray.setContextMenu(menu);
+  // 微信同款交互：左键直接拉起截屏，右键才弹出菜单。
+  trayMenu = menu;
   tray.setToolTip(`Snap 截图  ${HOTKEY}${awake ? '  · 屏幕常亮' : ''}`);
 }
 
@@ -807,10 +810,12 @@ if (!app.requestSingleInstanceLock()) {
 
     try {
       tray = new Tray(trayIcon());
-      tray.setToolTip(`Snap 截图  ${HOTKEY}`);
       refreshTray();
-      // Left-click opens the context menu; capture starts only from the hotkey
-      // (or the menu's 「截图」 item) — never implicitly from the click itself.
+      // 微信同款交互：左键直接拉起截屏，右键弹出菜单。
+      tray.on('click', () => startCapture());
+      tray.on('right-click', () => {
+        if (trayMenu) tray.popUpContextMenu(trayMenu);
+      });
     } catch (err) {
       log('tray failed:', err.message);
     }
