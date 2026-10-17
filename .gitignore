@@ -4,3 +4,10 @@ build/
 .DS_Store
 *.log
 test-out/
+
+# 本机代理/规划产物
+.zcode/
+
+# 本地代码签名私钥，绝不入库（仓库是公开的）
+assets/cert/
+*.p12

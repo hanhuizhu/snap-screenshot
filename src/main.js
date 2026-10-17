@@ -7,6 +7,9 @@ const {
 } = require('electron');
 const path = require('node:path');
 const fs = require('node:fs');
+const http = require('node:http');
+const os = require('node:os');
+const crypto = require('node:crypto');
 const HelperClient = require('./helper-client');
 const clip = require('./clipboard-image');
 const settings = require('./settings');
@@ -500,6 +503,57 @@ function refreshTray() {
 
 // ---------------------------------------------------------------- help window
 
+/** 控制台默认尺寸：够放下 API 调试台的请求/响应两栏，又不会在 1440×900 上顶格。 */
+const PANEL_SIZE = { width: 1080, height: 760 };
+
+/**
+ * 记住控制台的位置与大小。存下来的矩形只有仍与某块显示器相交时才复用，
+ * 否则拔掉外接屏后窗口会跑到看不见的地方。
+ */
+function savedPanelBounds() {
+  const b = settings.get('panelBounds', null);
+  if (!b || !Number.isFinite(b.width) || !Number.isFinite(b.height)) return null;
+  if (b.width < 480 || b.height < 360) return null;
+  const visible = screen.getAllDisplays().some((d) => {
+    const a = d.workArea;
+    return b.x < a.x + a.width && b.x + b.width > a.x
+      && b.y < a.y + a.height && b.y + b.height > a.y;
+  });
+  return visible ? b : null;
+}
+
+function rememberPanelBounds(win) {
+  if (!win) return;
+  let b;
+  let maximized = false;
+  let fullscreen = false;
+  try {
+    maximized = win.isMaximized();
+    fullscreen = win.isFullScreen();
+    // 最大化/全屏下要取「还原后」的矩形，否则会把铺满屏幕的尺寸当成默认大小
+    b = maximized || fullscreen ? win.getNormalBounds() : win.getBounds();
+  } catch {
+    return;                       // window is already gone
+  }
+  if (!b.width || !b.height) return;
+  settings.set('panelBounds', {
+    x: b.x, y: b.y, width: b.width, height: b.height, maximized, fullscreen,
+  });
+}
+
+/**
+ * 窗口几何一变就防抖记一次。不能只挂在 close 上：渲染进程自己调
+ * window.close() 时 Electron 只发 closed、不发 close，那条路径会漏记。
+ */
+function watchPanelBounds(win) {
+  let timer = null;
+  const save = () => {
+    clearTimeout(timer);
+    timer = setTimeout(() => rememberPanelBounds(win), 400);
+  };
+  for (const ev of ['resize', 'move', 'maximize', 'unmaximize']) win.on(ev, save);
+}
+
 /** 总面板：所有面向用户的操作入口（设置/说明/API 调试台标签页）。 */
 function showHelp(reason) {
   if (helpWin && !helpWin.isDestroyed()) {
@@ -507,17 +561,20 @@ function showHelp(reason) {
     helpWin.focus();
     return helpWin;
   }
+  const saved = savedPanelBounds();
   helpWin = new BrowserWindow({
-    width: 760,
-    height: 640,
+    width: saved ? saved.width : PANEL_SIZE.width,
+    height: saved ? saved.height : PANEL_SIZE.height,
+    ...(saved ? { x: saved.x, y: saved.y } : {}),
     title: 'Snap 控制台',
     resizable: true,
     minimizable: false,
-    maximizable: false,
-    fullscreenable: false,
+    maximizable: true,
+    fullscreenable: true,
     show: false,
     webPreferences: { preload: PRELOAD, contextIsolation: true, nodeIntegration: false },
   });
+  watchPanelBounds(helpWin);
   helpWin.loadFile(path.join(__dirname, 'renderer', 'panel.html'));
   helpWin.webContents.once('did-finish-load', () => {
     helpWin.webContents.send('snap:help-init', {
@@ -530,8 +587,12 @@ function showHelp(reason) {
   });
   helpWin.once('ready-to-show', () => {
     helpWin.show();
+    // 全屏要等窗口可见后才生效；最大化可以在隐藏时设，但放一起更清楚
+    if (saved && saved.fullscreen) helpWin.setFullScreen(true);
+    else if (saved && saved.maximized) helpWin.maximize();
     helpWin.focus();
   });
+  helpWin.on('close', () => rememberPanelBounds(helpWin));
   helpWin.on('closed', () => { helpWin = null; });
   return helpWin;
 }
@@ -757,6 +818,192 @@ ipcMain.handle('snap:api-send', async (_e, spec) => {
 
 // 截图只由全局快捷键拉起：刻意不提供任何 IPC/点击入口。
 
+// ---------------------------------------------------------------- json stores
+
+// 日历记录、草稿都是用户长期累积的真数据，所以存成 userData 下可读可备份的
+// JSON，而不是 localStorage。写入走「临时文件 + rename」，中途失败不会留半个文件。
+
+function storeFile(name) {
+  return path.join(app.getPath('userData'), name);
+}
+
+/** 读一个 { version, <key>: [...] } 形状的 store；读不动就改名留档，绝不静默丢数据。 */
+function readJsonStore(file, key) {
+  const empty = () => ({ version: 1, [key]: [] });
+  try {
+    const raw = JSON.parse(fs.readFileSync(file, 'utf8'));
+    if (!raw || typeof raw !== 'object' || !Array.isArray(raw[key])) throw new Error('bad shape');
+    return { version: raw.version || 1, [key]: raw[key] };
+  } catch (err) {
+    if (err && err.code === 'ENOENT') return empty();
+    const backup = `${file}.corrupt-${stamp()}`;
+    try {
+      fs.renameSync(file, backup);
+      log('store unreadable, kept as', backup);
+    } catch {}
+    return empty();
+  }
+}
+
+function writeJsonStore(file, key, data) {
+  const list = data && Array.isArray(data[key]) ? data[key] : [];
+  const payload = JSON.stringify({ version: 1, [key]: list }, null, 2);
+  try {
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    const tmp = `${file}.tmp`;
+    fs.writeFileSync(tmp, payload);
+    fs.renameSync(tmp, file);
+    return { ok: true, path: file, bytes: payload.length };
+  } catch (err) {
+    return { ok: false, error: String((err && err.message) || err) };
+  }
+}
+
+// ------------------------------------------------------------------- calendar
+
+const calendarFile = () => storeFile('calendar.json');
+
+ipcMain.handle('snap:calendar-load', () => readJsonStore(calendarFile(), 'records'));
+ipcMain.handle('snap:calendar-save', (_e, data) => writeJsonStore(calendarFile(), 'records', data));
+ipcMain.handle('snap:calendar-path', () => calendarFile());
+
+// --------------------------------------------------------------------- drafts
+
+const draftsFile = () => storeFile('drafts.json');
+
+ipcMain.handle('snap:drafts-load', () => readJsonStore(draftsFile(), 'drafts'));
+ipcMain.handle('snap:drafts-save', (_e, data) => writeJsonStore(draftsFile(), 'drafts', data));
+ipcMain.handle('snap:drafts-path', () => draftsFile());
+
+// ------------------------------------------------- 草稿共享（局域网只读页面）
+
+// 手机扫码看草稿：本机起一个只读 HTTP 服务，地址里带一段随机 token，
+// 免得同网段的人靠扫端口就能翻到内容。只在用户点「共享」时开着。
+
+let shareServer = null;      // { server, port, token, url, host }
+
+/** 找一个像样的局域网 IPv4：跳过虚拟/隧道网卡，优先私有网段。 */
+function lanAddress() {
+  const skip = /^(utun|bridge|awdl|llw|gif|stf|anpi|lo)/;
+  const found = [];
+  for (const [name, list] of Object.entries(os.networkInterfaces())) {
+    if (skip.test(name)) continue;
+    for (const info of list || []) {
+      if (info.family !== 'IPv4' || info.internal) continue;
+      found.push({ name, address: info.address });
+    }
+  }
+  const isPrivate = (ip) => /^(192\.168\.|10\.|172\.(1[6-9]|2\d|3[01])\.)/.test(ip);
+  return found.find((f) => isPrivate(f.address)) || found[0] || null;
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+}
+
+/** 手机上看的那张只读页面。每 5 秒自动刷新，编辑草稿后手机上会跟着更新。 */
+function sharePage(drafts) {
+  const cards = drafts.length
+    ? drafts.map((d) => {
+      const text = String(d.text || '');
+      const firstLine = text.split('\n').map((l) => l.trim()).find(Boolean) || '无标题';
+      return `<article><h2>${escapeHtml(firstLine)}</h2><pre>${escapeHtml(text)}</pre></article>`;
+    }).join('\n')
+    : '<p class="empty">还没有草稿</p>';
+
+  return `<!DOCTYPE html>
+<html lang="zh-CN"><head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<meta http-equiv="refresh" content="5" />
+<title>Snap 草稿</title>
+<style>
+  :root { color-scheme: light dark; }
+  body { margin: 0; padding: 16px 14px 40px; font: 15px/1.7 -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif;
+         background: #fbfbfd; color: #1d1d1f; }
+  @media (prefers-color-scheme: dark) { body { background: #1e1e20; color: #e8e8ea; } article { background: #2a2a2d !important; border-color: #38383c !important; } }
+  header { display: flex; align-items: baseline; gap: 8px; margin-bottom: 12px; }
+  h1 { font-size: 19px; margin: 0; }
+  .muted { color: #86868b; font-size: 13px; }
+  article { background: #fff; border: 1px solid #e6e6ea; border-radius: 12px; padding: 12px 14px; margin-bottom: 10px; }
+  article h2 { font-size: 15px; margin: 0 0 6px; }
+  article pre { margin: 0; white-space: pre-wrap; word-break: break-word;
+                font: 14px/1.7 -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif; }
+  .empty { color: #86868b; }
+</style></head>
+<body>
+  <header><h1>Snap 草稿</h1><span class="muted">只读 · ${drafts.length} 条</span></header>
+  ${cards}
+</body></html>`;
+}
+
+function shareInfo() {
+  if (!shareServer) return { ok: true, running: false };
+  return { ok: true, running: true, url: shareServer.url, host: shareServer.host, port: shareServer.port };
+}
+
+function stopShare() {
+  if (!shareServer) return { ok: true, running: false };
+  try { shareServer.server.close(); } catch {}
+  log('drafts share stopped');
+  shareServer = null;
+  return { ok: true, running: false };
+}
+
+function startShare() {
+  if (shareServer) return shareInfo();
+  const token = crypto.randomBytes(8).toString('hex');
+
+  const server = http.createServer((req, res) => {
+    const url = new URL(req.url, 'http://localhost');
+    if (req.method !== 'GET' && req.method !== 'HEAD') {
+      res.writeHead(405, { 'content-type': 'text/plain; charset=utf-8' });
+      res.end('只读');
+      return;
+    }
+    // 路径必须带 token，否则一律 404（不暴露这里在跑什么）
+    if (url.pathname.replace(/^\/+|\/+$/g, '') !== token) {
+      res.writeHead(404, { 'content-type': 'text/plain; charset=utf-8' });
+      res.end('not found');
+      return;
+    }
+    const { drafts } = readJsonStore(draftsFile(), 'drafts');
+    if (url.searchParams.get('json') === '1') {
+      res.writeHead(200, { 'content-type': 'application/json; charset=utf-8' });
+      res.end(JSON.stringify(drafts, null, 2));
+      return;
+    }
+    res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
+    res.end(sharePage(drafts));
+  });
+
+  return new Promise((resolve) => {
+    server.on('error', (err) => {
+      log('drafts share failed:', err.message);
+      resolve({ ok: false, error: String(err.message || err) });
+    });
+    server.listen(0, '0.0.0.0', () => {
+      const { port } = server.address();
+      const lan = lanAddress();
+      const host = lan ? lan.address : '127.0.0.1';
+      shareServer = { server, port, token, host, url: `http://${host}:${port}/${token}/` };
+      log('drafts share listening on', shareServer.url);
+      resolve(shareInfo());
+    });
+  });
+}
+
+ipcMain.handle('snap:drafts-share-start', () => startShare());
+ipcMain.handle('snap:drafts-share-stop', () => stopShare());
+ipcMain.handle('snap:drafts-share-status', () => shareInfo());
+
+/** 二维码交给原生 helper（CoreImage），渲染层只拿 base64。 */
+ipcMain.handle('snap:qrcode', async (_e, text) => {
+  if (!helper) return { ok: false, error: '原生 helper 未运行' };
+  const png = await helper.qrcode(text);
+  return png ? { ok: true, png } : { ok: false, error: '二维码生成失败' };
+});
+
 // ---------------------------------------------------------------- settings ipc
 
 function settingsSnapshot() {
@@ -947,6 +1194,9 @@ if (!app.requestSingleInstanceLock()) {
   app.on('will-quit', () => {
     globalShortcut.unregisterAll();
     if (helper) helper.dispose();
+    stopShare();
+    // 从托盘「退出」时不会走窗口的 close 事件，这里补一次尺寸记忆。
+    if (helpWin && !helpWin.isDestroyed()) rememberPanelBounds(helpWin);
   });
 
   // Tray utility: keep running even with no windows open.

@@ -11,12 +11,42 @@
 //   -> {"cmd":"status"}
 //   <- {"ok":true,"axTrusted":true}
 //
+//   -> {"cmd":"qrcode","text":"http://192.168.1.5:8731/ab12cd34/"}
+//   <- {"ok":true,"png":"<base64 PNG>"}
+//
 // Coordinates are global Quartz display points (origin = top-left of the main
 // display, y grows downward), which is the same space Electron's screen module
 // reports, so the renderer only has to subtract its own display origin.
 
 import Foundation
 import ApplicationServices
+import AppKit
+import CoreImage
+
+// MARK: - QR code
+
+/// 用 CoreImage 生成二维码 PNG（base64）。不自己写编码器：Reed-Solomon + 掩码
+/// 那套很容易出错，系统自带的更可靠。返回的是符号本身，静默区由调用方用留白补。
+func qrCodePNG(_ text: String) -> String? {
+    guard let data = text.data(using: .utf8),
+          let filter = CIFilter(name: "CIQRCodeGenerator") else { return nil }
+    filter.setValue(data, forKey: "inputMessage")
+    filter.setValue("M", forKey: "inputCorrectionLevel")
+    guard let symbol = filter.outputImage else { return nil }
+
+    // 放大到手机上扫得动的尺寸（最近邻，保持边缘锐利）
+    let scale: CGFloat = 8
+    let scaled = symbol.transformed(by: CGAffineTransform(scaleX: scale, y: scale))
+
+    let rep = NSCIImageRep(ciImage: scaled)
+    let image = NSImage(size: rep.size)
+    image.addRepresentation(rep)
+    guard let tiff = image.tiffRepresentation,
+          let bitmap = NSBitmapImageRep(data: tiff),
+          let png = bitmap.representation(using: NSBitmapImageRep.FileType.png,
+                                          properties: [NSBitmapImageRep.PropertyKey: Any]()) else { return nil }
+    return png.base64EncodedString()
+}
 
 // MARK: - output
 
@@ -172,6 +202,16 @@ while true {
 
         case "status":
             emit(["ok": true, "axTrusted": AXIsProcessTrusted()])
+
+        case "qrcode":
+            let text = (obj["text"] as? String) ?? ""
+            if text.isEmpty {
+                emit(["ok": false, "error": "empty text"])
+            } else if let png = qrCodePNG(text) {
+                emit(["ok": true, "png": png])
+            } else {
+                emit(["ok": false, "error": "qr generation failed"])
+            }
 
         case "quit":
             emit(["ok": true, "bye": true])

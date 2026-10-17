@@ -15,6 +15,8 @@ build_slice() {
   local target="$2"
   local out="$OUT/winsnap-$arch"
   echo "  · compiling winsnap for $arch"
+  # 先删旧产物：否则 swiftc 编译失败时，上一轮留下的文件会让下面的存在性检查误判成功
+  rm -f "$out"
   swiftc -O -target "$target" -o "$out" "$SRC" 2>&1 | grep -v "warning:" || true
   if [ ! -f "$out" ]; then
     echo "  ! $arch slice failed"

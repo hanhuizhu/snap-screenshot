@@ -8,6 +8,8 @@
     "start": "electron .",
     "helper": "bash scripts/build-helper.sh",
     "selftest": "node scripts/run-selftest.js",
+    "test:calendar": "node scripts/test-calendar-logic.js",
+    "test:drafts": "node scripts/test-drafts-logic.js",
     "bundle": "bash scripts/build-app.sh"
   },
   "devDependencies": {

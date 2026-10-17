@@ -18,11 +18,19 @@ APP_NAME="Snap"
 DISPLAY_NAME="Snap 截图"
 # 签名身分：显式环境变量 > 仓库自带的「Snap Dev」证书（若已导入本机）> ad-hoc。
 # 固定身份让 macOS 把每次打包视为同一应用，屏幕录制等授权不会因换包失效。
+#
+# 这里刻意不加 find-identity 的 -v：自签身份没有受信任的信任链，-v 不会列出它，
+# 但签名照样能用——它的 designated requirement 锚定在证书哈希上
+# （certificate root = H"…"），所以重打包后身份不变，这才是 TCC 授权不失效的原因。
 SIGN_ID="${SNAP_SIGN_IDENTITY:-}"
-if [ -z "$SIGN_ID" ] && security find-identity -v -p codesigning 2>/dev/null | grep -q '"Snap Dev"'; then
+if [ -z "$SIGN_ID" ] && security find-identity -p codesigning 2>/dev/null | grep -q '"Snap Dev"'; then
   SIGN_ID="Snap Dev"
 fi
-[ -z "$SIGN_ID" ] && SIGN_ID="-"
+if [ -z "$SIGN_ID" ]; then
+  SIGN_ID="-"
+  printf '\033[1;33m! ad-hoc 签名：每次打包都会变成「新应用」，屏幕录制等授权会失效。\033[0m\n'
+  printf '\033[1;33m  先跑一次 bash scripts/make-dev-cert.sh 换成固定的「Snap Dev」身份。\033[0m\n'
+fi
 SKIP_UNIVERSAL=0
 [ "${1:-}" = "--skip-universal" ] && SKIP_UNIVERSAL=1
 

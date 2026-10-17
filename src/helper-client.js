@@ -69,7 +69,7 @@ class HelperClient {
     }
   }
 
-  _send(obj) {
+  _send(obj, timeout = this.timeout) {
     if (this.dead) return Promise.resolve(null);
     return new Promise((resolve) => {
       const entry = { resolve, timer: null };
@@ -77,7 +77,7 @@ class HelperClient {
         const i = this.pending.indexOf(entry);
         if (i >= 0) this.pending.splice(i, 1);
         resolve(null);
-      }, this.timeout);
+      }, timeout);
       this.pending.push(entry);
       try {
         this.child.stdin.write(JSON.stringify(obj) + '\n');
@@ -108,6 +108,12 @@ class HelperClient {
   async windows() {
     const res = await this._send({ cmd: 'windows' });
     return res && res.ok ? res.windows : [];
+  }
+
+  /** 二维码 PNG（base64）。首次调用要初始化 CoreImage，超时放宽一些。 */
+  async qrcode(text) {
+    const res = await this._send({ cmd: 'qrcode', text: String(text || '') }, 4000);
+    return res && res.ok ? res.png : null;
   }
 
   dispose() {

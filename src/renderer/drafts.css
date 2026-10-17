@@ -1,0 +1,234 @@
+/* Snap drafts (草稿) — scoped under .drafts, same token/dark-mode conventions as
+ * apidebug.css / calendar.css. Loaded by panel.html. */
+
+.drafts {
+  --bg: #fbfbfd;
+  --fg: #1d1d1f;
+  --muted: #86868b;
+  --card: #fff;
+  --line: #e6e6ea;
+  --line-soft: #f0f0f3;
+  --field: #fff;
+  --hover: rgba(128, 128, 128, .09);
+  --accent: #1677ff;
+  --bad: #ff453a;
+
+  display: flex;
+  height: 100%;
+  min-height: 0;
+  font-size: 12px;
+  color: var(--fg);
+  background: var(--bg);
+}
+
+@media (prefers-color-scheme: dark) {
+  .drafts {
+    --bg: #1e1e20;
+    --fg: #e8e8ea;
+    --muted: #9a9aa0;
+    --card: #2a2a2d;
+    --line: #38383c;
+    --line-soft: #303033;
+    --field: #232326;
+    --hover: rgba(255, 255, 255, .07);
+  }
+}
+
+.drafts *, .drafts *::before, .drafts *::after { box-sizing: border-box; }
+.drafts input, .drafts textarea, .drafts button { font: inherit; color: inherit; }
+
+/* ------------------------------------------------------------------- 列表 */
+
+.drafts .drafts-list {
+  flex: none;
+  width: 208px;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  border-right: 1px solid var(--line);
+  background: var(--bg);
+}
+
+.drafts .drafts-listhead { flex: none; padding: 8px; }
+
+.drafts .drafts-new {
+  width: 100%;
+  padding: 5px 10px;
+  border: 1px solid var(--accent);
+  border-radius: 7px;
+  background: var(--accent);
+  color: #fff;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.drafts .drafts-new:hover { background: #0d6ae8; }
+
+.drafts .drafts-items { flex: 1; min-height: 0; overflow: auto; padding: 0 6px 8px; }
+
+.drafts .drafts-item {
+  position: relative;
+  padding: 6px 8px;
+  margin-bottom: 2px;
+  border-radius: 7px;
+  cursor: pointer;
+}
+
+.drafts .drafts-item:hover { background: var(--hover); }
+.drafts .drafts-item.on { background: var(--accent); color: #fff; }
+
+.drafts .drafts-item-title {
+  font-size: 12px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding-right: 18px;
+}
+
+.drafts .drafts-item-time { font-size: 10.5px; color: var(--muted); margin-top: 1px; }
+.drafts .drafts-item.on .drafts-item-time { color: rgba(255, 255, 255, .82); }
+
+.drafts .drafts-item-del {
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: none;
+  border-radius: 5px;
+  background: none;
+  color: var(--muted);
+  cursor: pointer;
+  line-height: 1;
+  opacity: 0;
+}
+
+.drafts .drafts-item:hover .drafts-item-del { opacity: 1; }
+.drafts .drafts-item.on .drafts-item-del { color: rgba(255, 255, 255, .85); }
+.drafts .drafts-item-del:hover { background: rgba(0, 0, 0, .18); color: #fff; }
+
+/* ------------------------------------------------------------------- 编辑 */
+
+.drafts .drafts-editor {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--card);
+}
+
+.drafts .drafts-text {
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  padding: 16px 20px;
+  border: none;
+  outline: none;
+  resize: none;
+  background: transparent;
+  font: 13px/1.75 -apple-system, BlinkMacSystemFont, "PingFang SC", "Helvetica Neue", sans-serif;
+  tab-size: 2;
+}
+
+.drafts .drafts-text::placeholder { color: var(--muted); }
+
+.drafts .drafts-foot {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 12px;
+  border-top: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.drafts .drafts-grow { flex: 1; }
+.drafts .drafts-state.s-saved { color: #1f9d55; }
+.drafts .drafts-state.s-error { color: var(--bad); }
+.drafts .drafts-path { color: var(--muted); }
+
+@media (prefers-color-scheme: dark) {
+  .drafts .drafts-state.s-saved { color: #4ade80; }
+}
+
+.drafts .drafts-del {
+  padding: 3px 11px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--bad);
+  cursor: pointer;
+}
+
+.drafts .drafts-del:hover { background: var(--hover); }
+
+/* -------------------------------------------------------------- 共享面板 */
+
+.drafts .drafts-share-btn {
+  padding: 3px 11px;
+  border: 1px solid var(--accent);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--accent);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.drafts .drafts-share-btn:hover { background: var(--hover); }
+.drafts .drafts-share-btn.on { background: var(--accent); color: #fff; }
+.drafts .drafts-share-btn:disabled { opacity: .55; cursor: default; }
+
+.drafts .drafts-share {
+  flex: none;
+  display: flex;
+  gap: 14px;
+  align-items: flex-start;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--line);
+  background: var(--bg);
+}
+
+.drafts .drafts-share[hidden] { display: none; }
+
+/* 二维码本身没有静默区，用白底留白补出来，不然手机扫不到 */
+.drafts .drafts-share-qrbox {
+  flex: none;
+  padding: 8px;
+  border-radius: 10px;
+  background: #fff;
+  border: 1px solid var(--line);
+  line-height: 0;
+}
+
+.drafts .drafts-share-qr { width: 132px; height: 132px; image-rendering: pixelated; }
+
+.drafts .drafts-share-info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+.drafts .drafts-share-title { font-weight: 600; font-size: 12.5px; }
+
+.drafts .drafts-share-url {
+  font: 11.5px/1.6 ui-monospace, SFMono-Regular, Menlo, monospace;
+  padding: 4px 8px;
+  border-radius: 6px;
+  background: var(--card);
+  border: 1px solid var(--line);
+  word-break: break-all;
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+.drafts .drafts-share-actions { display: flex; gap: 8px; }
+
+.drafts .drafts-ghost {
+  padding: 3px 11px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--fg);
+  cursor: pointer;
+}
+
+.drafts .drafts-ghost:hover { background: var(--hover); }
+.drafts .drafts-share-note { color: var(--muted); font-size: 11px; line-height: 1.6; }

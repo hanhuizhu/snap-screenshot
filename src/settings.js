@@ -13,6 +13,7 @@ const DEFAULTS = {
   keepAwake: false,     // prevent display sleep
   openAtLogin: false,   // start with the system
   hotkey: null,         // override ⌃⌘A
+  panelBounds: null,    // last console window rect {x,y,width,height,maximized}
 };
 
 let cache = null;

@@ -30,6 +30,20 @@ contextBridge.exposeInMainWorld('snapHost', {
   // --- api window ---
   apiSend: (spec) => ipcRenderer.invoke('snap:api-send', spec),
 
+  // --- calendar ---
+  calendarLoad: () => ipcRenderer.invoke('snap:calendar-load'),
+  calendarSave: (data) => ipcRenderer.invoke('snap:calendar-save', data),
+  calendarPath: () => ipcRenderer.invoke('snap:calendar-path'),
+
+  // --- drafts ---
+  draftsLoad: () => ipcRenderer.invoke('snap:drafts-load'),
+  draftsSave: (data) => ipcRenderer.invoke('snap:drafts-save', data),
+  draftsPath: () => ipcRenderer.invoke('snap:drafts-path'),
+  draftsShareStart: () => ipcRenderer.invoke('snap:drafts-share-start'),
+  draftsShareStop: () => ipcRenderer.invoke('snap:drafts-share-stop'),
+  draftsShareStatus: () => ipcRenderer.invoke('snap:drafts-share-status'),
+  qrcode: (text) => ipcRenderer.invoke('snap:qrcode', text),
+
   // --- pin window ---
   onPinInit: (cb) => ipcRenderer.on('snap:pin-init', (_e, data) => cb(data)),
   pinClose: () => ipcRenderer.send('snap:pin-close'),
