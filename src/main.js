@@ -809,7 +809,8 @@ if (!app.requestSingleInstanceLock()) {
       tray = new Tray(trayIcon());
       tray.setToolTip(`Snap 截图  ${HOTKEY}`);
       refreshTray();
-      tray.on('click', () => startCapture());
+      // Left-click opens the context menu; capture starts only from the hotkey
+      // (or the menu's 「截图」 item) — never implicitly from the click itself.
     } catch (err) {
       log('tray failed:', err.message);
     }

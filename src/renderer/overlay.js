@@ -929,10 +929,9 @@ function onMouseDown(e) {
   }
 
   if (S.hover && S.autoDetect) {
-    S.sel = { ...S.hover };
-    S.hover = null;
-    S.phase = 'move';
-    S.drag = { mode: 'move', start: p, orig: { ...S.sel } };
+    // WeChat-style: hold still and release → select the hovered element;
+    // press and drag past the slop → fresh lasso from the press point.
+    S.drag = { mode: 'click-or-lasso', start: p };
     return;
   }
 
@@ -961,6 +960,20 @@ function onMouseUp(e) {
   S.drag = null;
 
   if (!d) return;
+
+  if (d.mode === 'click-or-lasso') {
+    // released without crossing the slop → the plain click selects the hovered element
+    if (S.hover) {
+      S.sel = { x: S.hover.x, y: S.hover.y, w: S.hover.w, h: S.hover.h };
+      S.hover = null;
+      S.phase = 'ready';
+    } else {
+      S.phase = 'idle';
+      host.release();
+    }
+    dirty();
+    return;
+  }
 
   if (d.mode === 'textmove') {
     if (!d.moved) openEditor(d.op.x, d.op.y, d.op);
@@ -1015,6 +1028,14 @@ function onContextMenu(e) {
 
 function dragMove(p, shift) {
   const d = S.drag;
+  if (d.mode === 'click-or-lasso') {
+    if (Math.hypot(p.x - d.start.x, p.y - d.start.y) < 4) return;
+    // crossed the slop: forget the hover and lasso freely from the press point
+    S.hover = null;
+    d.mode = 'select';
+    d.anchor = d.start;
+    S.sel = { x: d.anchor.x, y: d.anchor.y, w: 0, h: 0 };
+  }
   if (d.mode === 'textmove') {
     d.op.x = d.orig.x + (p.x - d.start.x);
     d.op.y = d.orig.y + (p.y - d.start.y);

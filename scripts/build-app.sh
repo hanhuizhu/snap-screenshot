@@ -55,7 +55,7 @@ ELECTRON_VER="$(node -p "require('$ROOT/node_modules/electron/package.json').ver
 # plutil, not PlistBuddy: PlistBuddy splits -c commands on spaces, which silently
 # breaks values like "Snap 截图".
 
-plist_set() { # file key value [type]
+plist_set() { # file key value [type]  — type last: plist_set f Key value bool
   local f="$1"
   local k="$2"
   local v="$3"
@@ -77,7 +77,7 @@ patch_main_plist() {
   plist_set "$plist" CFBundleShortVersionString "$VERSION"
   plist_set "$plist" CFBundleVersion "$VERSION"
   plist_set "$plist" CFBundleIconFile "AppIcon"
-  plist_set "$plist" LSUIElement bool true
+  plist_set "$plist" LSUIElement true bool
   plist_set "$plist" NSHumanReadableCopyright "Snap — WeChat-style screenshot tool"
   plist_set "$plist" LSApplicationCategoryType "public.app-category.utilities"
 }
@@ -180,6 +180,10 @@ if [ "$SKIP_UNIVERSAL" = 0 ]; then
   log "merging into a universal app"
   if node scripts/make-universal.js "$APP_X64" "$APP_ARM64" "$UNIVERSAL" "$SIGN_ID"; then
     echo "  · ${UNIVERSAL}  ($(du -sh "$UNIVERSAL" | cut -f1))"
+    # sign the merged bundle in place too: merge inputs must be unsigned, but
+    # leaving the staged result unsigned is a trap for anyone installing it
+    log "signing the merged bundle"
+    sign_app "$UNIVERSAL"
   else
     echo "  ! universal merge failed — shipping thin builds only"
     SKIP_UNIVERSAL=1
@@ -196,7 +200,11 @@ package_one() { # app_path label
   cp -R "$app" "$tmp/$APP_NAME.app"
 
   log "signing + packaging $label"
-  sign_app "$tmp/$APP_NAME.app"
+  if codesign --verify --deep --strict "$tmp/$APP_NAME.app" >/dev/null 2>&1; then
+    echo "  · signature carried over"
+  else
+    sign_app "$tmp/$APP_NAME.app"
+  fi
   ln -s /Applications "$tmp/Applications"
 
   local zip="$DIST/$APP_NAME-$VERSION-$label.zip"
