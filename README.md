@@ -64,6 +64,11 @@
 - 钉在屏幕：贴图窗口可拖动，滚轮缩放（等比）、⌘+滚轮调透明度、双击 / Esc 关闭、右键菜单
 
 **菜单栏**
+- **左键图标 = 直接截屏；右键 = 菜单**（微信同款交互）
+- **API 调试台**（右键菜单 → “API 调试台…”）：Postman/Apifox 式的接口调试——
+  方法+URL+Params/Headers/Body（JSON、表单、原文）/Auth（Bearer、Basic）、
+  `{{环境变量}}` 替换、发送前预览、响应状态/耗时/大小/格式化 JSON 高亮/响应头/二进制导出、
+  收藏与历史（本地持久化）。请求在主进程发出，不受浏览器跨域限制。
 - **保持屏幕常亮（不息屏）**：勾选后调用 `powerSaveBlocker('prevent-display-sleep')`，
   桌面不再息屏/睡眠；设置持久化，下次启动自动生效
 - **开机自动启动**：登录后自动后台运行（macOS 13+ 若提示“需要允许”，到
@@ -99,6 +104,22 @@ npm run bundle              # 打包 x64 / arm64 / universal → dist/
 
 开发模式运行时，屏幕录制权限归属于 **Electron**（而不是打包后的 Snap）。
 
+### 为什么替换安装要重新授权「屏幕录制」？如何避免
+
+macOS 把屏幕录制授权记在应用的**代码签名身份**上。默认 ad-hoc 签名的身份
+= 每次构建二进制的内容摘要，所以每次重新打包系统都视为“新应用”，授权失效。
+
+解决办法（已内置到本仓库的构建流程）：本机生成一张自签代码签名证书
+`Snap Dev`（有效期 10 年），打包时以它签名，身份不再随构建变化——
+授权只需一次，之后替换安装不再丢：
+
+```bash
+# 一次性：生成并导入签署身份（详见 scripts/make-dev-cert.sh）
+bash scripts/make-dev-cert.sh
+# 之后打包都以固定身份签名
+SNAP_SIGN_IDENTITY="Snap Dev" npm run bundle
+```
+
 ### 自检
 
 `npm run selftest` 用合成桌面（不需要屏幕录制权限）驱动真实 UI：
@@ -128,8 +149,9 @@ node scripts/upload-tree-via-api.js <owner/repo> main "commit message"
 ## 结构
 
 ```
-src/main.js              主进程：快捷键、多屏抓屏、覆盖窗口、剪贴板/保存/贴图、托盘、权限
+src/main.js              主进程：快捷键、多屏抓屏、覆盖窗口、剪贴板/保存/贴图、托盘、权限、API 调试代理
 src/renderer/overlay.js  选区状态机、放大镜、工具栏、键盘、导出
+src/renderer/api.*       API 调试台界面（主进程 fetch 代理，绕开 CORS）
 src/renderer/ops.js      标注模型与渲染（含马赛克像素化、合成导出）
 src/renderer/pin.*       贴图窗口
 src/renderer/help.*      使用说明 / 设置（含常亮与开机启动开关）

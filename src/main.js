@@ -26,6 +26,28 @@ let tray = null;
 let helpWin = null;
 let helpShownThisLaunch = false;
 const pinWindows = new Set();
+let apiWin = null;
+
+// ---------------------------------------------------------------- api debugger window
+
+function showApiWindow() {
+  if (apiWin && !apiWin.isDestroyed()) {
+    apiWin.show();
+    apiWin.focus();
+    return apiWin;
+  }
+  apiWin = new BrowserWindow({
+    width: 1180,
+    height: 820,
+    title: 'Snap · API 调试台',
+    show: false,
+    webPreferences: { preload: PRELOAD, contextIsolation: true, nodeIntegration: false },
+  });
+  apiWin.loadFile(path.join(__dirname, 'renderer', 'api.html'));
+  apiWin.once('ready-to-show', () => apiWin.show());
+  apiWin.on('closed', () => { apiWin = null; });
+  return apiWin;
+}
 
 // ---------------------------------------------------------------- utilities
 
@@ -466,6 +488,7 @@ function refreshTray() {
       click: () => openPermissionPane('ax'),
     },
     { type: 'separator' },
+    { label: 'API 调试台…', click: showApiWindow },
     { label: '使用说明 / 设置…', click: () => showHelp('manual') },
     { label: '退出 Snap', click: () => { app.exit(0); } },
   ]);
@@ -648,6 +671,86 @@ ipcMain.handle('snap:open-permission', (e, which) => {
 ipcMain.handle('snap:help', (e, reason) => {
   showHelp(reason || 'manual');
   return { ok: true };
+});
+
+// ---------------------------------------------------------------- api proxy
+
+// 这些头由 fetch / Electron 决定，转发自定义值会被拒或产生歧义
+const HOP_HEADERS = new Set([
+  'host', 'connection', 'content-length', 'transfer-encoding', 'upgrade',
+  'origin', 'referer', 'user-agent', 'cookie', 'accept-encoding',
+]);
+const API_METHODS = new Set(['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS']);
+
+ipcMain.handle('snap:api-send', async (_e, spec) => {
+  const t0 = Date.now();
+  try {
+    const method = String(spec.method || 'GET').toUpperCase();
+    if (!API_METHODS.has(method)) return { ok: false, error: `不支持的方法 ${method}` };
+
+    let url;
+    try { url = new URL(String(spec.url || '')); } catch { url = null; }
+    if (!url || !/^https?:$/.test(url.protocol)) return { ok: false, error: 'URL 不合法（仅支持 http/https）' };
+
+    const headers = { 'user-agent': 'snap-apidebug/1.0' };
+    for (const [k, v] of Object.entries(spec.headers || {})) {
+      const name = String(k).trim();
+      if (!name || HOP_HEADERS.has(name.toLowerCase())) continue;
+      headers[name] = String(v);
+    }
+
+    let body;
+    if (!['GET', 'HEAD'].includes(method) && spec.body != null && spec.body !== '') {
+      const ct = String(spec.contentType || '');
+      if (ct && !Object.keys(headers).some((h) => h.toLowerCase() === 'content-type')) {
+        headers['content-type'] = ct;
+      }
+      body = String(spec.body);
+    }
+
+    const timeoutMs = Math.min(120000, Number(spec.timeoutMs) || 30000);
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+
+    try {
+      const r = await fetch(url, {
+        method,
+        headers,
+        body,
+        redirect: spec.followRedirects === false ? 'manual' : 'follow',
+        signal: controller.signal,
+      });
+      const buf = Buffer.from(await r.arrayBuffer());
+      const outHeaders = {};
+      r.headers.forEach((v, k) => {
+        if (k === 'set-cookie') return;
+        (outHeaders[k] = outHeaders[k] || []).push(v);
+      });
+      return {
+        ok: true,
+        status: r.status,
+        statusText: r.statusText || '',
+        headers: outHeaders,
+        size: buf.length,
+        timeMs: Date.now() - t0,
+        redirected: r.redirected,
+        finalUrl: r.url,
+        bodyB64: buf.toString('base64'),
+        mime: r.headers.get('content-type') || '',
+      };
+    } catch (err) {
+      const aborted = err.name === 'AbortError';
+      return {
+        ok: false,
+        error: aborted ? `请求超时（${timeoutMs}ms，可在右上角调整）` : String((err.cause && err.cause.message) || err.message || err),
+        timeMs: Date.now() - t0,
+      };
+    } finally {
+      clearTimeout(timer);
+    }
+  } catch (err) {
+    return { ok: false, error: String(err && err.message), timeMs: Date.now() - t0 };
+  }
 });
 
 ipcMain.handle('snap:capture', () => {

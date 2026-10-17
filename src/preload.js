@@ -26,6 +26,9 @@ contextBridge.exposeInMainWorld('snapHost', {
   setSetting: (key, value) => ipcRenderer.invoke('snap:set-setting', { key, value }),
   openLoginItems: () => ipcRenderer.invoke('snap:open-login-items'),
 
+  // --- api window ---
+  apiSend: (spec) => ipcRenderer.invoke('snap:api-send', spec),
+
   // --- pin window ---
   onPinInit: (cb) => ipcRenderer.on('snap:pin-init', (_e, data) => cb(data)),
   pinClose: () => ipcRenderer.send('snap:pin-close'),
