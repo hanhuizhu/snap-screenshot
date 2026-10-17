@@ -106,6 +106,23 @@ npm run bundle              # 打包 x64 / arm64 / universal → dist/
 改变了导出图片的像素、马赛克块是否真的按 10pt 网格一致、剪贴板与保存文件的分辨率等等，
 并把每个阶段的截图写到 `build/test-out/`。
 
+自检也会跑在打包后的 app 上（`SNAP_SELFTEST=1 SNAP_DEMO=1 "Snap.app/Contents/MacOS/Snap"`），
+用来验证 bundle 本身：helper 改名、Info.plist、通用二进制都在这条路径上被验证。
+
+### 发布
+
+```bash
+npm run bundle                                  # 产出 dist/Snap-<ver>-mac-universal.{dmg,zip}
+gh release create v1.0.0 dist/*.dmg dist/*.zip  # 或用网页上传产物
+```
+
+如果所在网络对 `github.com` 的 git 传输不友好（`HTTP/2 framing layer`、`Empty reply from server`），
+但 `api.github.com` 可用，可以用 REST 接口同步工作区（单次提交，不产生逐文件历史）：
+
+```bash
+node scripts/upload-tree-via-api.js <owner/repo> main "commit message"
+```
+
 ---
 
 ## 结构
