@@ -16,9 +16,10 @@ contextBridge.exposeInMainWorld('snapHost', {
   axTrusted: () => ipcRenderer.invoke('snap:ax-trusted'),
   openPermission: (which) => ipcRenderer.invoke('snap:open-permission', which),
   help: (reason) => ipcRenderer.invoke('snap:help', reason),
-  capture: () => ipcRenderer.invoke('snap:capture'),
   log: (msg) => ipcRenderer.send('snap:log', msg),
   onOwner: (cb) => ipcRenderer.on('snap:owner', (_e, id) => cb(id)),
+  // 冻结画面异步推送（截图体验：窗口先出，画面随后）
+  onPng: (cb) => ipcRenderer.on('snap:png', (_e, png) => cb(png)),
 
   // --- help window ---
   onHelpInit: (cb) => ipcRenderer.on('snap:help-init', (_e, data) => cb(data)),

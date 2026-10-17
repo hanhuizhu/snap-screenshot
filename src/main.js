@@ -161,18 +161,12 @@ async function grabScreens(displays) {
 async function startCapture() {
   if (session) { endSession(); return; }
 
+  // Windows first, pixels second: dimming the screen should not wait for the
+  // (slow) full-screen capture; the frozen frame streams into the overlay.
   const displays = screen.getAllDisplays();
-  let images = new Map();
-  try {
-    images = await grabScreens(displays);
-  } catch (err) {
-    log('capture failed:', err);
-  }
-
-  const created = [];
   const cursor = screen.getCursorScreenPoint();
+  const created = [];
   for (const display of displays) {
-    const png = images.get(display.id) || null;
     const init = {
       displayId: display.id,
       displayCount: displays.length,
@@ -183,7 +177,7 @@ async function startCapture() {
       demo: DEMO,
       axTrusted: axPermission(),
       hotkey: HOTKEY,
-      png: png || null,
+      png: null, // 冻结画面稍后经 snap:png 推送（demo 模式由渲染端合成）
     };
     const win = createOverlayWindow(display, init);
     created.push({ win, display, init });
@@ -195,18 +189,29 @@ async function startCapture() {
   // Give the display that owns the pointer (the one the user is looking at) a
   // chance to grab keyboard focus once it is on screen.
   const active = created.find((d) => d.display.id === primary.id) || created[0];
-  if (active) {
-    active.win.once('show', () => {
-      try { app.focus({ steal: true }); } catch {}
-      active.win.focus();
-    });
-  } else {
-    endSession();
-  }
+  if (!active) { endSession(); return; }
+  active.win.once('show', () => {
+    try { app.focus({ steal: true }); } catch {}
+    active.win.focus();
+  });
+
+  // The heart of the perceived latency: only the dim+chrome waits on window
+  // boot; the frame itself arrives whenever the capturer is done.
+  grabScreens(displays)
+    .then(async (images) => {
+      if (!session) return;                       // user already quit the session
+      for (const d of session.displays) {
+        if (d.win.isDestroyed()) continue;
+        const png = images.get(d.display.id) || null;
+        d.init.png = png;
+        d.win.webContents.send('snap:png', png);
+      }
+    })
+    .catch((err) => log('capture failed:', err));
 
   // Nag about the missing screen-recording permission once per launch, not on
   // every attempt (the overlay must keep keyboard focus for Esc).
-  if (screenPermission() !== 'granted' && !helpShownThisLaunch) {
+  if (!DEMO && screenPermission() !== 'granted' && !helpShownThisLaunch) {
     helpShownThisLaunch = true;
     showHelp('permission');
   }
@@ -447,10 +452,7 @@ function refreshTray() {
       : '开机自动启动';
 
   const menu = Menu.buildFromTemplate([
-    {
-      label: `截图  ${HOTKEY.replace('Command', '⌘').replace('Control', '⌃').replace(/\+/g, ' ')}`,
-      click: () => startCapture(),
-    },
+    { label: '打开控制台…', click: () => showHelp('manual') },
     { type: 'separator' },
     {
       label: '保持屏幕常亮（不息屏）',
@@ -488,7 +490,6 @@ function refreshTray() {
       click: () => openPermissionPane('ax'),
     },
     { type: 'separator' },
-    { label: 'API 调试台…', click: showApiWindow },
     { label: '使用说明 / 设置…', click: () => showHelp('manual') },
     { label: '退出 Snap', click: () => { app.exit(0); } },
   ]);
@@ -499,6 +500,7 @@ function refreshTray() {
 
 // ---------------------------------------------------------------- help window
 
+/** 总面板：所有面向用户的操作入口（设置/说明/API 调试台标签页）。 */
 function showHelp(reason) {
   if (helpWin && !helpWin.isDestroyed()) {
     helpWin.show();
@@ -506,17 +508,17 @@ function showHelp(reason) {
     return helpWin;
   }
   helpWin = new BrowserWindow({
-    width: 620,
-    height: 560,
-    title: 'Snap 截图 · 使用说明',
-    resizable: false,
+    width: 760,
+    height: 640,
+    title: 'Snap 控制台',
+    resizable: true,
     minimizable: false,
     maximizable: false,
     fullscreenable: false,
     show: false,
     webPreferences: { preload: PRELOAD, contextIsolation: true, nodeIntegration: false },
   });
-  helpWin.loadFile(path.join(__dirname, 'renderer', 'help.html'));
+  helpWin.loadFile(path.join(__dirname, 'renderer', 'panel.html'));
   helpWin.webContents.once('did-finish-load', () => {
     helpWin.webContents.send('snap:help-init', {
       hotkey: HOTKEY,
@@ -748,15 +750,12 @@ ipcMain.handle('snap:api-send', async (_e, spec) => {
     } finally {
       clearTimeout(timer);
     }
-  } catch (err) {
+    } catch (err) {
     return { ok: false, error: String(err && err.message), timeMs: Date.now() - t0 };
   }
 });
 
-ipcMain.handle('snap:capture', () => {
-  setTimeout(() => startCapture(), 120);
-  return { ok: true };
-});
+// 截图只由全局快捷键拉起：刻意不提供任何 IPC/点击入口。
 
 // ---------------------------------------------------------------- settings ipc
 
@@ -898,7 +897,7 @@ function registerHotkey() {
 if (!app.requestSingleInstanceLock()) {
   app.exit(0);
 } else {
-  app.on('second-instance', () => startCapture());
+  app.on('second-instance', () => showHelp('manual'));
 
   app.whenReady().then(async () => {
     try { app.setActivationPolicy('accessory'); } catch {}
@@ -914,8 +913,8 @@ if (!app.requestSingleInstanceLock()) {
     try {
       tray = new Tray(trayIcon());
       refreshTray();
-      // 微信同款交互：左键直接拉起截屏，右键弹出菜单。
-      tray.on('click', () => startCapture());
+      // 左键打开总面板；截图只由全局快捷键拉起。
+      tray.on('click', () => showHelp('manual'));
       tray.on('right-click', () => {
         if (trayMenu) tray.popUpContextMenu(trayMenu);
       });
@@ -941,6 +940,8 @@ if (!app.requestSingleInstanceLock()) {
         helper: () => helper,
       });
     }
+
+    if (process.env.SNAP_PANEL === '1') showHelp('manual');
   });
 
   app.on('will-quit', () => {

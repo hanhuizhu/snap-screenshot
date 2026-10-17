@@ -1415,4 +1415,21 @@ window.__snap = {
 boot().catch((err) => {
   host.log('boot failed: ' + (err && err.stack ? err.stack : err));
 });
+
+// 冻结画面后到：主进程抓屏完成后再灌进来（窗口先出、画面后到）。
+host.onPng(async (png) => {
+  if (!png || IS_DEMO) return;
+  try {
+    const src = URL.createObjectURL(new Blob([png], { type: 'image/png' }));
+    IMG = await loadImage(src);
+    el.shot.src = src;
+    el.shot.style.width = DIPW + 'px';
+    el.shot.style.height = DIPH + 'px';
+    MOSAIC = Ops.buildMosaicBase(IMG, DIPW, MOSAIC_BLOCK);
+    dirty();
+  } catch (err) {
+    host.log('png ingest failed: ' + (err && err.message));
+  }
+});
+
 requestAnimationFrame(loop);
