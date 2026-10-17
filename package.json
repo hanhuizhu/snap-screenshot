@@ -1,0 +1,17 @@
+{
+  "name": "snap",
+  "version": "1.0.0",
+  "private": true,
+  "description": "WeChat-style macOS screenshot tool — global hotkey Ctrl+Cmd+A, region capture, annotation, pin-to-screen",
+  "main": "src/main.js",
+  "scripts": {
+    "start": "electron .",
+    "helper": "bash scripts/build-helper.sh",
+    "selftest": "node scripts/run-selftest.js",
+    "bundle": "bash scripts/build-app.sh"
+  },
+  "devDependencies": {
+    "@electron/universal": "^3.0.6",
+    "electron": "44.8.0"
+  }
+}

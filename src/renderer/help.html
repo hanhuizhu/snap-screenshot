@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'" />
+  <title>Snap 截图 · 使用说明</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      padding: 26px 30px 30px;
+      font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Helvetica Neue", sans-serif;
+      font-size: 13px;
+      line-height: 1.65;
+      color: #1d1d1f;
+      background: #fbfbfd;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+    @media (prefers-color-scheme: dark) {
+      body { color: #e8e8ea; background: #1e1e20; }
+      .card { background: #2a2a2d !important; border-color: #38383c !important; }
+      .muted { color: #9a9aa0 !important; }
+      kbd { background: #3a3a3e !important; border-color: #4a4a4e !important; color: #e8e8ea !important; }
+      table td { border-color: #38383c !important; }
+    }
+    h1 { font-size: 17px; margin: 0 0 4px; letter-spacing: .2px; }
+    h2 { font-size: 13px; margin: 22px 0 8px; }
+    .muted { color: #86868b; }
+    .card {
+      background: #fff;
+      border: 1px solid #e6e6ea;
+      border-radius: 10px;
+      padding: 12px 14px;
+      margin-top: 10px;
+    }
+    .row { display: flex; align-items: center; gap: 10px; }
+    .row + .row { margin-top: 10px; padding-top: 10px; border-top: 1px solid rgba(128,128,128,.16); }
+    .grow { flex: 1; }
+    .dot { width: 9px; height: 9px; border-radius: 50%; flex: none; }
+    .ok { background: #30d158; }
+    .bad { background: #ff9f0a; }
+    button {
+      font: inherit;
+      font-size: 12px;
+      padding: 4px 11px;
+      border-radius: 6px;
+      border: 1px solid rgba(128,128,128,.3);
+      background: rgba(128,128,128,.1);
+      color: inherit;
+      cursor: pointer;
+    }
+    button:hover { background: rgba(128,128,128,.2); }
+    button.primary {
+      background: #1677ff; border-color: #1677ff; color: #fff; font-weight: 500;
+    }
+    button.primary:hover { background: #0d6ae8; }
+    kbd {
+      display: inline-block;
+      min-width: 20px;
+      padding: 1px 5px;
+      margin: 0 1px;
+      font: 11px/1.6 -apple-system, BlinkMacSystemFont, Menlo, monospace;
+      text-align: center;
+      background: #f2f2f5;
+      border: 1px solid #dcdce0;
+      border-bottom-width: 2px;
+      border-radius: 4px;
+    }
+    table { width: 100%; border-collapse: collapse; margin-top: 6px; }
+    td { padding: 5px 0; border-bottom: 1px dashed rgba(128,128,128,.22); vertical-align: top; }
+    td:last-child { text-align: right; white-space: nowrap; }
+    ol { margin: 6px 0 0; padding-left: 20px; }
+    .hotkey { font-size: 15px; font-weight: 600; }
+
+    .check { cursor: pointer; }
+    .check input[type="checkbox"] {
+      width: 16px; height: 16px; margin: 0; flex: none;
+      accent-color: #1677ff; cursor: pointer;
+    }
+    .check input[type="checkbox"]:disabled { cursor: default; opacity: .5; }
+    .pill {
+      font-size: 11px; padding: 2px 8px; border-radius: 20px; flex: none;
+      background: rgba(128,128,128,.16); color: inherit;
+    }
+    .pill.on { background: rgba(48,209,88,.18); color: #1f9d55; }
+    @media (prefers-color-scheme: dark) { .pill.on { color: #4ade80; } }
+  </style>
+</head>
+<body>
+  <h1>Snap 截图</h1>
+  <div class="muted">微信截图同款交互 · 框选、智能识别、标注、贴图</div>
+
+  <div class="card">
+    <div class="row">
+      <span class="grow">截图快捷键（全局，随时可用）</span>
+      <span class="hotkey" id="hotkey">⌃ ⌘ A</span>
+    </div>
+    <div class="row">
+      <button class="primary" id="shot-now">立即截图</button>
+      <span class="muted">也可以点菜单栏的取景框图标</span>
+    </div>
+  </div>
+
+  <h2>权限</h2>
+  <div class="card">
+    <div class="row">
+      <span class="dot" id="dot-screen"></span>
+      <span class="grow">
+        <b>屏幕录制</b><br />
+        <span class="muted" id="status-screen">检查中…</span>
+      </span>
+      <button id="btn-screen">打开系统设置</button>
+    </div>
+    <div class="row">
+      <span class="dot" id="dot-ax"></span>
+      <span class="grow">
+        <b>辅助功能</b><br />
+        <span class="muted" id="status-ax">检查中…</span>
+      </span>
+      <button id="btn-ax">打开系统设置</button>
+    </div>
+    <div class="muted" id="perm-note" style="margin-top:10px">
+      没有屏幕录制权限时，截图只会拍到桌面壁纸；没有辅助功能权限时，智能识别只能识别到整扇窗口，
+      无法精确到按钮/文字等控件。授权后<strong>需要重新启动 Snap</strong>。
+    </div>
+  </div>
+
+  <h2>设置</h2>
+  <div class="card">
+    <label class="row check" id="row-awake">
+      <input type="checkbox" id="chk-awake" />
+      <span class="grow">
+        <b>保持屏幕常亮</b><br />
+        <span class="muted">勾选后桌面不会息屏、不会进入睡眠（适合演示、看文档、盯盘）</span>
+      </span>
+      <span class="pill" id="pill-awake">关闭</span>
+    </label>
+    <label class="row check" id="row-login">
+      <input type="checkbox" id="chk-login" />
+      <span class="grow">
+        <b>开机自动启动</b><br />
+        <span class="muted" id="login-note">登录 macOS 后自动在后台运行，随时按快捷键截图</span>
+      </span>
+      <button id="btn-login-items" hidden>去允许</button>
+    </label>
+  </div>
+
+  <h2>用法</h2>
+  <div class="card">
+    <ol>
+      <li>按 <span class="hotkey" id="hotkey2">⌃⌘A</span>，屏幕变暗，鼠标处出现放大镜（带坐标与取色）。</li>
+      <li>移动鼠标，光标下的窗口/控件会自动高亮，点击即可选中；也可以按住拖拽自由框选。</li>
+      <li>选区确定后拖动 8 个控制点微调，方向键 1px 微调（按住 Shift 为 10px）。</li>
+      <li>用工具栏的矩形 / 椭圆 / 箭头 / 画笔 / 马赛克 / 文字做标注，再复制、保存或钉在屏幕上。</li>
+    </ol>
+    <table>
+      <tr><td>复制并退出</td><td><kbd>⌘</kbd><kbd>C</kbd> 或 <kbd>⏎</kbd></td></tr>
+      <tr><td>保存为 PNG</td><td><kbd>⌘</kbd><kbd>S</kbd></td></tr>
+      <tr><td>撤销 / 重做</td><td><kbd>⌘</kbd><kbd>Z</kbd> / <kbd>⇧</kbd><kbd>⌘</kbd><kbd>Z</kbd></td></tr>
+      <tr><td>全屏选区</td><td><kbd>⌘</kbd><kbd>A</kbd></td></tr>
+      <tr><td>开关智能识别</td><td><kbd>A</kbd> 或 <kbd>Tab</kbd></td></tr>
+      <tr><td>返回上一步 / 取消</td><td><kbd>Esc</kbd> / 右键</td></tr>
+      <tr><td>正方形、正圆、45° 箭头</td><td>拖拽时按住 <kbd>⇧</kbd></td></tr>
+      <tr><td>贴图：移动 / 缩放 / 透明度 / 关闭</td><td>拖拽 / 滚轮 / <kbd>⌘</kbd>滚轮 / 双击</td></tr>
+    </table>
+  </div>
+</body>
+<script src="help.js"></script>
+</html>
