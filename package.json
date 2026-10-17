@@ -1,6 +1,6 @@
 {
   "name": "snap",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "private": true,
   "description": "WeChat-style macOS screenshot tool — global hotkey Ctrl+Cmd+A, region capture, annotation, pin-to-screen",
   "main": "src/main.js",
