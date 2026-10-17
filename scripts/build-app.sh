@@ -16,7 +16,13 @@ VERSION="$(node -p "require('$ROOT/package.json').version")"
 BUNDLE_ID="com.shuye.snap"
 APP_NAME="Snap"
 DISPLAY_NAME="Snap 截图"
-SIGN_ID="${SNAP_SIGN_IDENTITY:--}"
+# 签名身分：显式环境变量 > 仓库自带的「Snap Dev」证书（若已导入本机）> ad-hoc。
+# 固定身份让 macOS 把每次打包视为同一应用，屏幕录制等授权不会因换包失效。
+SIGN_ID="${SNAP_SIGN_IDENTITY:-}"
+if [ -z "$SIGN_ID" ] && security find-identity -v -p codesigning 2>/dev/null | grep -q '"Snap Dev"'; then
+  SIGN_ID="Snap Dev"
+fi
+[ -z "$SIGN_ID" ] && SIGN_ID="-"
 SKIP_UNIVERSAL=0
 [ "${1:-}" = "--skip-universal" ] && SKIP_UNIVERSAL=1
 

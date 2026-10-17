@@ -106,19 +106,25 @@ npm run bundle              # 打包 x64 / arm64 / universal → dist/
 
 ### 为什么替换安装要重新授权「屏幕录制」？如何避免
 
-macOS 把屏幕录制授权记在应用的**代码签名身份**上。默认 ad-hoc 签名的身份
+macOS 把屏幕录制等 TCC 授权记在应用的**代码签名身份**上。默认 ad-hoc 签名的身份
 = 每次构建二进制的内容摘要，所以每次重新打包系统都视为“新应用”，授权失效。
 
-解决办法（已内置到本仓库的构建流程）：本机生成一张自签代码签名证书
-`Snap Dev`（有效期 10 年），打包时以它签名，身份不再随构建变化——
-授权只需一次，之后替换安装不再丢：
+本仓库已内置解决方案：**自签证书 `Snap Dev`（`assets/cert/snap-dev.p12`）随仓库共享**，
+任何机器打包前先执行一次 `bash scripts/make-dev-cert.sh`（导入钥匙串并信任，
+过程中系统弹确认框就点“始终信任”），之后 `npm run bundle` 会自动选用该身份。
+所有机器签出的应用是**同一个签名身份**，替换安装不再丢授权（每台新机器
+首次运行仍需各自授权一次屏幕录制，这是按机器记录的，无法避免）。
 
 ```bash
-# 一次性：生成并导入签署身份（详见 scripts/make-dev-cert.sh）
-bash scripts/make-dev-cert.sh
-# 之后打包都以固定身份签名
-SNAP_SIGN_IDENTITY="Snap Dev" npm run bundle
+bash scripts/make-dev-cert.sh   # 每台机器一次
+npm run bundle                  # 自动使用 Snap Dev 身份签名
+SNAP_SIGN_IDENTITY="其他身份" npm run bundle   # 需要覆盖时
 ```
+
+> ⚠️ 私钥随仓库分发意味着拿到仓库的人都能签出「Snap Dev」身份。
+> 请保持仓库私有/小范围使用；需要收口时可重新生成证书
+> （删掉 `assets/cert/snap-dev.p12` 后本机重跑：`rm -rf ~/.snap-dev-cert && bash scripts/make-dev-cert.sh`），
+> 并让所有成员重新执行一次 `make-dev-cert.sh + 屏幕录制授权`。
 
 ### 自检
 
